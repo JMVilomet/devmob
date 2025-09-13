@@ -45,8 +45,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## Version History
+## [1.0.1] - 2025-09-07
 
-- **v1.0.0**: Initial release with full React Native development environment
+### Added
+- **Shell Command Enhancement**: Added `--root` option to `shell` command for opening root shell in project directory
+  - Usage: `./devmob shell --root [project]`
+  - Opens bash shell as root user when --root flag is present
 
+---
+
+## [1.0.2] - 2025-09-13
+
+### Added
+- **Logcat Command**: New `logcat` command for React Native debugging with smart device detection
+  - Usage: `./devmob logcat` (auto-detects device) or `./devmob logcat -s <device>` (specify device)
+  - Filters logs to show only ReactNative and ReactNativeJS messages (`*:S ReactNative:V ReactNativeJS:V`)
+  - **Smart Device Detection**: Automatically prioritizes real devices over emulators when multiple devices are connected
+  - **Device Priority System**: Real devices (IP addresses) have highest priority, emulators have lowest priority
+
+---
 

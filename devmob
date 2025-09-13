@@ -72,6 +72,43 @@ use_android_version() {
   echo "Successfully created AVD 'default_avd' with Android $version using $SYSTEM_IMAGE"
 }
 
+detect_device() {
+    # Get list of connected devices, excluding the header line
+    local devices_output=$(docker compose exec devmob adb devices 2>/dev/null | tail -n +2 | grep -v "^$")
+    
+    if [ -z "$devices_output" ]; then
+        echo ""
+        return 1
+    fi
+    
+    local real_devices=()
+    local emulators=()
+    
+    # Parse devices 
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^([^[:space:]]+)[[:space:]]+device$ ]]; then
+            local device_id="${BASH_REMATCH[1]}"
+            if [[ "$device_id" =~ ^emulator- ]] || [[ "$device_id" == *"emulator"* ]]; then
+                emulators+=("$device_id")
+            else
+                real_devices+=("$device_id")
+            fi
+        fi
+    done <<< "$devices_output"
+    
+    # Prioritize real devices over emulators
+    if [ ${#real_devices[@]} -gt 0 ]; then
+        echo "${real_devices[0]}"
+        return 0
+    elif [ ${#emulators[@]} -gt 0 ]; then
+        echo "${emulators[0]}"
+        return 0
+    else
+        echo ""
+        return 1
+    fi
+}
+
 init_container() {
 cat <<EOF > .env
 UID=$(id -u)
@@ -160,8 +197,18 @@ Available commands:
   logs                   Show container logs
                            - Executes 'docker compose logs' inside the container
 
+  status                 Check devmob status
+                           - Checks if the stack is up
+                           - Checks if metro has been started
+
   devices                List connected Android devices
                            - Executes 'adb devices' inside the container
+
+  logcat [-s <device>]    Show Android logcat for React Native
+                           - Filters logs to show only ReactNative and ReactNativeJS
+                           - Auto-detects connected device if -s not specified
+                           - Prioritizes real devices over emulators
+                           - Usage: logcat or logcat -s 192.168.1.100:5555
 
   expo [project]          Create a new Expo project
                            - Uses '$PROJECT' as default name if no project specified
@@ -174,9 +221,10 @@ Available commands:
                            - Initializes project and installs dependencies
                            - Starts the development server
 
-  shell [project]         Open a shell in the project directory
+  shell [--root] [project]         Open a shell in the project directory
                           - Uses '$PROJECT' as default name if no project specified
                           - Opens bash shell inside the project folder
+                          - Use --root to open as root user
 
   android [project]       Run the Android app
                           - Uses '$PROJECT' as default name if no project specified
@@ -216,7 +264,10 @@ Examples:
   ./devmob start myApp                      # Start devmob with myApp project
   ./devmob stop                             # Stop devmob
   ./devmob logs                             # Show container logs
+  ./devmob status                           # Check devmob running status
   ./devmob devices                          # List connected devices
+  ./devmob logcat                           # Show logcat (auto-detect device)
+  ./devmob logcat -s 192.168.1.100:5555    # Show logcat for specific device
   ./devmob expo MyExpoApp                   # Create Expo project 'MyExpoApp'
   ./devmob use 34                           # Install Android SDK version 34
   ./devmob emulator start                   # Start emulator
@@ -225,6 +276,7 @@ Examples:
   ./devmob create myApp                     # Create project 'myApp'
   ./devmob test myApp                       # Run tests on myApp
   ./devmob shell myApp                      # Open shell in myApp
+  ./devmob shell --root myApp               # Open root shell in myApp
   ./devmob android myApp                    # Run myApp on Android
   ./devmob ios myApp                        # Run myApp on iOS
   ./devmob ls /tmp                          # List the contains of the container's /tmp
@@ -239,6 +291,17 @@ case "$1" in
 "init")
     echo "Initializing environment..."
     init_container
+    ;;
+"status")
+    if ensure_stack_ok; then
+        if docker compose exec devmob pgrep -f "npm start" > /dev/null 2>&1; then
+            echo "Stack is up. A metro process is running"
+        else
+            echo "Stack is up. No app running."
+        fi
+    else
+        echo "Stack is down. Start it with './devmob start'" 
+    fi
     ;;
 "build")
     ensure_install_ok
@@ -285,10 +348,17 @@ case "$1" in
     docker compose exec devmob bash -c "cd $PROJECT_NAME && npm install && npm start"
     ;;
 "shell")
-    PROJECT_NAME="${2:-$PROJECT}"
-    echo "Opening shell in project: $PROJECT_NAME"
+    if [ "$2" = "--root" ]; then
+        USER_FLAG="-u root"
+        PROJECT_NAME="${3:-$PROJECT}"
+        echo "Opening root shell in project: $PROJECT_NAME"
+    else
+        USER_FLAG=""
+        PROJECT_NAME="${2:-$PROJECT}"
+        echo "Opening shell in project: $PROJECT_NAME"
+    fi
     ensure_stack_ok
-    docker compose exec devmob bash -c "cd $PROJECT_NAME && bash"
+    docker compose exec $USER_FLAG devmob bash -c "cd $PROJECT_NAME && bash"
     ;;
 "android")
     PROJECT_NAME="${2:-$PROJECT}"
@@ -341,6 +411,31 @@ case "$1" in
     echo "Listing connected Android devices..."
     ensure_stack_ok
     docker compose exec devmob adb devices
+    ;;
+"logcat")
+    echo "Starting Android logcat for React Native..."
+    ensure_stack_ok
+    
+    # Check if -s parameter is provided
+    if [ "$2" = "-s" ] && [ -n "$3" ]; then
+        DEVICE="$3"
+        echo "Using specified device: $DEVICE"
+        docker compose exec devmob adb -s "$DEVICE" logcat "*:S" "ReactNative:V" "ReactNativeJS:V"
+    else
+        # Auto-detect device
+        echo "Auto-detecting connected device..."
+        DETECTED_DEVICE=$(detect_device)
+        
+        if [ -z "$DETECTED_DEVICE" ]; then
+            echo "Error: No connected Android devices found."
+            echo "Please connect a device or start an emulator first."
+            echo "Use './devmob devices' to list connected devices."
+            exit 1
+        fi
+        
+        echo "Using detected device: $DETECTED_DEVICE"
+        docker compose exec devmob adb -s "$DETECTED_DEVICE" logcat "*:S" "ReactNative:V" "ReactNativeJS:V"
+    fi
     ;;
 "expo")
     PROJECT_NAME="${2:-$PROJECT}"

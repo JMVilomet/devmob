@@ -18,6 +18,7 @@
   - [Project Creation](#project-creation)
   - [Development Server](#development-server)
   - [Device Management](#device-management)
+  - [Debugging](#debugging)
   - [Android SDK Management](#android-sdk-management)
   - [Emulator Control](#emulator-control)
   - [Wireless Debugging](#wireless-debugging)
@@ -187,6 +188,27 @@ Builds and starts Docker containers with all development tools.
 ```
 Shows all connected Android devices and emulators.
 
+### Debugging
+
+#### View React Native Logs
+```bash
+./devmob logcat [-s <device>]
+```
+
+**Auto-detect device** (recommended):
+```bash
+./devmob logcat
+```
+- Automatically detects connected devices
+- Prioritizes real devices over emulators
+- Shows only ReactNative and ReactNativeJS logs
+
+**Specify device manually**:
+```bash
+./devmob logcat -s 192.168.1.100:5555
+./devmob logcat -s emulator-5554
+```
+
 #### Run on Android
 ```bash
 ./devmob android [project_name]
@@ -281,7 +303,8 @@ Passes any command directly to the container:
 ```bash
 ./devmob ls -la                    # List files
 ./devmob npm install lodash       # Install package
-./devmob adb logcat               # View Android logs
+./devmob logcat                   # View React Native logs (filtered)
+./devmob adb logcat               # View all Android logs (unfiltered)
 ```
 
 ## Examples
@@ -316,7 +339,10 @@ Passes any command directly to the container:
 # 2. Connect to device
 ./devmob connect 192.168.1.100:5555
 
-# 3. Run your app
+# 3. View logs while developing
+./devmob logcat
+
+# 4. Run your app
 ./devmob android MyProject
 ```
 
